@@ -17,7 +17,7 @@ const char* mqtt_topic = "monitoramento/saude";
 // MQTT Client
 mqtt_client_t* mqtt_client;
 
-// Configurações de Sensores (exemplo fictício)
+// Configurações de Sensores
 const uint pulsePin = 26; // Pino GPIO do sensor de pulso
 
 // Protótipo de funções
