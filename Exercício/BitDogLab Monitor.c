@@ -123,6 +123,18 @@ void bt_connect_callback(void) {
     // Agora o dispositivo Bluetooth está pronto para receber dados
 }
 
+//exportar para CSV
+void exportar_para_csv(int frequencia, int glicose, float pressao) {
+    FILE *file = fopen("/path/to/dados_monitoramento.csv", "a");
+    if (file == NULL) {
+        printf("Erro ao abrir o arquivo CSV\n");
+        return;
+    }
+
+    fprintf(file, "%d,%d,%.2f\n", frequencia, glicose, pressao);
+    fclose(file);
+}
+
 // Configuração do Bluetooth
 void bt_setup() {
     if (cyw43_arch_init()) {
