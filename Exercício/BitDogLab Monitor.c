@@ -99,8 +99,7 @@ void enviar_alerta(int glicose, float pressao, int freq_cardiaca) {
     printf("Enviando alerta para tópico: %s\n", topico);
     printf("Payload: %s\n", payload);
     
-    // Aqui você deve implementar a lógica de envio MQTT
-    // Exemplo: mqtt_publish(topico, payload);
+
 }
 
 // Função de callback para recepção de dados via Bluetooth
