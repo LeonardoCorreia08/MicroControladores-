@@ -123,7 +123,7 @@ void bt_connect_callback(void) {
     // Agora o dispositivo Bluetooth está pronto para receber dados
 }
 
-//exportar para CSV
+// Exportar para CSV
 void exportar_para_csv(int frequencia, int glicose, float pressao) {
     FILE *file = fopen("/path/to/dados_monitoramento.csv", "a");
     if (file == NULL) {
@@ -209,12 +209,11 @@ int main() {
         
         // Verifica se os valores exigem um alerta
         enviar_alerta(glicose, pressao, frequencia_cardíaca);
-
-        sleep_ms(10000);
-        if (total_frequencias % 10 == 0) {
-            analisar_dados();
-        }
-        sleep_ms(2000);
+        analisar_dados();
+        exportar_para_csv(frequencia_cardíaca, glicose, pressao);
+        
+        sleep_ms(1000);  // Espera 1 segundo antes de coletar novamente
     }
+
     return 0;
 }
