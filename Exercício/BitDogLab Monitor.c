@@ -7,7 +7,6 @@
 #include "lwip/dns.h"
 #include "lwip/apps/httpd.h"
 #include "hardware/adc.h"
-#include "hardware/uart.h"
 #include <time.h>
 
 // Wi-Fi Configurações
@@ -20,11 +19,8 @@
 // Configuração do Pulse Sensor
 #define PULSE_SENSOR_PIN 26  // ADC 0 (GPIO26)
 
-// Usando UART com HC-05
-#define UART_ID uart0
-#define BAUD_RATE 9600
-#define UART_TX_PIN 0
-#define UART_RX_PIN 1
+// Configuração do Bluetooth
+#define BT_DEVICE_NAME "MonitorHealth"  // Nome do dispositivo Bluetooth
 
 #define MAX_DADOS 100  // Máximo de amostras armazenadas
 
@@ -88,43 +84,41 @@ void piscar_led(int bpm) {
 
 static struct tcp_pcb *tcp_client_pcb;
 
-err_t tcp_recv_callback(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err) {
-    if (p == NULL) {
-        printf("Conexao encerrada.\n");
-        tcp_close(tpcb);
-        return ERR_OK;
+// Função de callback para recepção de dados via Bluetooth
+void bt_recv_callback(uint8_t *data, size_t len) {
+    // Processar dados recebidos do FreeStyle Libre 2 e WBP202
+    if (len == sizeof(int)) {
+        int glicose = *((int *)data);  // Exemplo de dado para glicose
+        printf("Glicose recebida: %d mg/dL\n", glicose);
+    } else if (len == sizeof(float)) {
+        float pressao = *((float *)data);  // Exemplo de dado para pressão arterial
+        printf("Pressão arterial recebida: %.2f mmHg\n", pressao);
     }
-
-    char buffer[128];
-    pbuf_copy_partial(p, buffer, p->len, 0);
-    buffer[p->len] = '\0';
-    printf("Recebido: %s\n", buffer);
-
-    pbuf_free(p);
-    return ERR_OK;
 }
 
-err_t tcp_connect_callback(void *arg, struct tcp_pcb *tpcb, err_t err) {
-    if (err != ERR_OK) {
-        printf("Falha na conexão.\n");
-        return err;
-    }
-
-    printf("Conectado ao servidor.\n");
-    const char *message = "Monitoramento de paciente iniciado\n";
-    tcp_write(tpcb, message, strlen(message), TCP_WRITE_FLAG_COPY);
-    tcp_recv(tpcb, tcp_recv_callback);
-    return ERR_OK;
+// Função de conexão Bluetooth
+void bt_connect_callback(void) {
+    printf("Bluetooth conectado!\n");
+    // Agora o dispositivo Bluetooth está pronto para receber dados
 }
 
-static void dns_callback(const char *name, const ip_addr_t *ipaddr, void *callback_arg) {
-    if (ipaddr == NULL) {
-        printf("Falha ao resolver DNS %s\n", name);
+// Configuração do Bluetooth
+void bt_setup() {
+    if (cyw43_arch_init()) {
+        printf("Falha ao inicializar Bluetooth.\n");
         return;
     }
 
-    printf("Resolvido %s para %s\n", name, ipaddr_ntoa(ipaddr));
-    tcp_connect(tcp_client_pcb, ipaddr, TCP_PORT, tcp_connect_callback);
+    cyw43_arch_enable_bt_mode();
+    if (cyw43_arch_bt_advertise_name(BT_DEVICE_NAME)) {
+        printf("Falha ao anunciar dispositivo Bluetooth.\n");
+        return;
+    }
+
+    // Adicionar callback para quando o dispositivo for conectado
+    cyw43_arch_bt_set_connection_callback(bt_connect_callback);
+
+    printf("Bluetooth configurado e pronto para conexão.\n");
 }
 
 void wifi_setup() {
@@ -167,10 +161,7 @@ int main() {
     srand(time(NULL));
 
     wifi_setup();
-
-    uart_init(UART_ID, BAUD_RATE);
-    gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
-    gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
+    bt_setup();  // Inicializa Bluetooth
 
     while (true) {
         int frequencia_cardíaca = ler_pulse_sensor();
