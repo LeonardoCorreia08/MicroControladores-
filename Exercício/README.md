@@ -87,6 +87,15 @@ Os dados do sensor são formatados em **JSON** e publicados a cada **5 segundos*
 ✔️ Verifique se o **broker.hivemq.com** está acessível  
 
 ---
+### ***Exportando para JSON:***
+O formato JSON foi implementado pois  tbem usado para  exportação e pode ser usado se você precisar enviar os dados para um servidor ou ferramenta que suporte JSON.
+
+### ***Exportacao para BD***
+Com isso, sempre que você quiser exportar os dados para o banco de dados MySQL, pode chamar a função exportar_para_mysql(), passando os dados a serem registrados.
+
+Conectar o Banco de Dados ao BI:
+No BI (Power BI, Tableau, etc.), você pode configurar uma conexão com o banco de dados e realizar consultas para exibir os dados de maneira visual.
+
 
 ## 📢 **Contribuição**
 Sinta-se à vontade para contribuir com melhorias! Faça um **fork** do repositório e envie um **pull request** 🚀
