@@ -5,16 +5,16 @@
 #include "lwip/pbuf.h"
 #include "lwip/tcp.h"
 #include "lwip/dns.h"
-#include "lwip/apps/mqtt.h"
+#include "lwip/apps/httpd.h"
 #include "hardware/uart.h"
 #include <time.h>
 
 // Wi-Fi Configurações
 #define WIFI_SSID "SecurityLife"
 #define WIFI_PASSWORD "OLDLIfe"
-#define MQTT_BROKER "broker.hivemq.com"
-#define MQTT_PORT 1883
-#define TOPIC "monitoramento/saude"
+#define TCP_SERVER "tcpbin.com"
+#define TCP_PORT 4242
+#define LED_PIN 2  // Define o GPIO 2 para o LED
 
 // Usando UART com HC-05
 #define UART_ID uart0
@@ -22,67 +22,134 @@
 #define UART_TX_PIN 0  // Pino TX do UART (GPIO 0)
 #define UART_RX_PIN 1  // Pino RX do UART (GPIO 1)
 
-#define LED_PIN 2
-#define MAX_DADOS 100
-#define DIAS_ARMAZENAMENTO 3
-#define INTERVALO_LEITURA 10  // Em segundos
+// Configuração do pino do LED para indicar quando o sensor está simulando uma leitura
+#define LED_PIN 3
+#define MAX_DADOS 100  // Quantidade máxima de dados armazenados
 
-typedef struct {
-    char pressao_arterial[10];  // Exemplo: "120/80"
-    int frequencia_cardiaca;     // Exemplo: 72 bpm
-    int glicose;                 // Exemplo: 110 mg/dL
-    time_t timestamp;            // Momento da leitura
-} DadosSaude;
-
-// Função de Callback para Mensagens MQTT
-void mqtt_incoming_publish_cb(void *arg, const char *topic, u32_t tot_len) {
-    printf("Mensagem recebida no tópico '%s'\n", topic);
-}
-DadosSaude historico[MAX_DADOS];
+// Buffer para armazenar os dados da frequência cardíaca
+int frequencias[MAX_DADOS];
 int total_leituras = 0;
 
-// Limites de alerta
-#define LIMITE_PRESSAO_SISTOLICA 140
-#define LIMITE_PRESSAO_DIASTOLICA 90
-#define LIMITE_FREQ_CARDIACA 100
-#define LIMITE_GLICOSE 140
-
-// Função para armazenar os dados por 3 dias
-void armazenar_dados(DadosSaude dados) {
+// Função para armazenar os dados da frequência cardíaca
+void armazenar_frequencia(int bpm) {
     if (total_leituras < MAX_DADOS) {
-        historico[total_leituras] = dados;
+        frequencias[total_leituras] = bpm;
         total_leituras++;
     } else {
+        printf("Buffer cheio! Dados antigos serão sobrescritos.\n");
         for (int i = 1; i < MAX_DADOS; i++) {
-            historico[i - 1] = historico[i];
+            frequencias[i - 1] = frequencias[i];  // Desloca os dados
         }
-        historico[MAX_DADOS - 1] = dados;
+        frequencias[MAX_DADOS - 1] = bpm;
     }
 }
 
-// Simula a geração de dados
-int gerar_frequencia_cardiaca() { return rand() % 41 + 60; }
-int gerar_glicose() { return rand() % 80 + 70; }
-void gerar_pressao_arterial(char *buffer) { snprintf(buffer, 10, "%d/%d", rand() % 40 + 90, rand() % 30 + 60); }
+// Função para calcular e exibir a análise dos dados armazenados
+void analisar_frequencias() {
+    if (total_leituras == 0) {
+        printf("Nenhum dado coletado ainda.\n");
+        return;
+    }
 
-// Enviar dados para MQTT
-void enviar_mqtt(mqtt_client_t *client, DadosSaude dados) {
-    char payload[100];
-    snprintf(payload, sizeof(payload), "{\"pressao_arterial\":\"%s\",\"frequencia_cardiaca\":%d,\"glicose\":%d}", 
-             dados.pressao_arterial, dados.frequencia_cardiaca, dados.glicose);
-    mqtt_publish(client, TOPIC, payload, strlen(payload), 1, 0, NULL, NULL);
+    int soma = 0, min = frequencias[0], max = frequencias[0];
+
+    for (int i = 0; i < total_leituras; i++) {
+        soma += frequencias[i];
+        if (frequencias[i] < min) min = frequencias[i];
+        if (frequencias[i] > max) max = frequencias[i];
+    }
+
+    float media = (float)soma / total_leituras;
+
+    printf("\nAnálise de Frequência Cardíaca:\n");
+    printf("Média: %.2f bpm\n", media);
+    printf("Mínima: %d bpm\n", min);
+    printf("Máxima: %d bpm\n\n", max);
 }
 
-void analisar_dados(DadosSaude dados) {
-    int sistolica, diastolica;
-    sscanf(dados.pressao_arterial, "%d/%d", &sistolica, &diastolica);
+// Função para gerar uma frequência cardíaca aleatória
+int gerar_frequencia_cardíaca() {
+    return rand() % 41 + 60;
+}
 
-    if (sistolica > LIMITE_PRESSAO_SISTOLICA || diastolica > LIMITE_PRESSAO_DIASTOLICA ||
-        dados.frequencia_cardiaca > LIMITE_FREQ_CARDIACA || dados.glicose > LIMITE_GLICOSE) {
-        printf("ALERTA: Níveis críticos detectados!\n");
-        gpio_put(LED_PIN, 1);
+// Função para controlar a quantidade de piscadas com base na frequência cardíaca
+void piscar_led(int bpm) {
+    int intervalo = 1000 / bpm;  // Calculo do intervalo entre as piscadas (em ms)
+    for (int i = 0; i < 5; i++) {
+        gpio_put(LED_PIN, 1);  // Liga o LED
+        sleep_ms(intervalo);
+        gpio_put(LED_PIN, 0);  // Desliga o LED
+        sleep_ms(intervalo);
+    }
+}
+
+static struct tcp_pcb *tcp_client_pcb;
+
+err_t tcp_recv_callback(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err) {
+    if (p == NULL) {
+        printf("Conexao recebida com servidor.\n");
+        tcp_close(tpcb);
+        return ERR_OK;
+    }
+
+    char buffer[128];
+    pbuf_copy_partial(p, buffer, p->len, 0);
+    buffer[p->len] = '\0';
+    printf("Recebido: %s\n", buffer);
+
+    pbuf_free(p);
+    return ERR_OK;
+}
+
+err_t tcp_connect_callback(void *arg, struct tcp_pcb *tpcb, err_t err) {
+    if (err != ERR_OK) {
+        printf("Conexao falhou com servidor.\n");
+        return err;
+    }
+
+    printf("Connected to server.\n");
+    const char *message = "idosinho sendo monitorado\n";
+    tcp_write(tpcb, message, strlen(message), TCP_WRITE_FLAG_COPY);
+    tcp_recv(tpcb, tcp_recv_callback);
+    return ERR_OK;
+}
+
+static void dns_callback(const char *name, const ip_addr_t *ipaddr, void *callback_arg) {
+    if (ipaddr == NULL) {
+        printf("Falha ao resolver o DNS %s\n", name);
+        return;
+    }
+
+    printf("Resolvido %s to %s\n", name, ipaddr_ntoa(ipaddr));
+    tcp_connect(tcp_client_pcb, ipaddr, TCP_PORT, tcp_connect_callback);
+}
+
+void wifi_setup() {
+    if (cyw43_arch_init()) {
+        printf("Falha para iniciar o modulo wifi.\n");
+        return;
+    }
+    cyw43_arch_enable_sta_mode();
+    if (cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 10000)) {
+        printf("SSID nao encontrada.\n");
+        cyw43_arch_poll();
+        cyw43_arch_deinit();
         sleep_ms(1000);
-        gpio_put(LED_PIN, 0);
+        wifi_setup();
+    }
+    printf("WiFi Conectado com suceso.\n");
+}
+
+void connect_to_server() {
+    tcp_client_pcb = tcp_new();
+    if (!tcp_client_pcb) {
+        printf("Falha em criar TCP PCB.\n");
+        return;
+    }
+    ip_addr_t server_ip;
+    err_t err = dns_gethostbyname(TCP_SERVER, &server_ip, dns_callback, NULL);
+    if (err == ERR_OK) {
+        tcp_connect(tcp_client_pcb, &server_ip, TCP_PORT, tcp_connect_callback);
     }
 }
 
@@ -92,32 +159,23 @@ int main() {
     gpio_set_dir(LED_PIN, GPIO_OUT);
     srand(time(NULL));
 
-    printf("Monitoramento Iniciado...\n");
+    wifi_setup();
 
-    // Conectar WiFi
-    cyw43_arch_init();
-    cyw43_arch_enable_sta_mode();
-    cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 10000);
-
-    // Configuração MQTT
-    mqtt_client_t *client = mqtt_client_new();
-    ip_addr_t broker_ip;
-    dns_gethostbyname(MQTT_BROKER, &broker_ip, NULL, NULL);
-    mqtt_connect(client, &broker_ip, MQTT_PORT, NULL, 0, NULL, NULL, NULL, 0, 0);
+    uart_init(UART_ID, BAUD_RATE);
+    gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
+    gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
 
     while (true) {
-        DadosSaude dados;
-        gerar_pressao_arterial(dados.pressao_arterial);
-        dados.frequencia_cardiaca = gerar_frequencia_cardiaca();
-        dados.glicose = gerar_glicose();
-        dados.timestamp = time(NULL);
-        
-        printf("Pressão: %s, FC: %d, Glicose: %d\n", dados.pressao_arterial, dados.frequencia_cardiaca, dados.glicose);
-        armazenar_dados(dados);
-        analisar_dados(dados);
-        enviar_mqtt(client, dados);
-        
-        sleep_ms(INTERVALO_LEITURA * 1000);
+        int frequencia_cardíaca = gerar_frequencia_cardíaca();
+        printf("Frequência Cardíaca: %d bpm\n", frequencia_cardíaca);
+        armazenar_frequencia(frequencia_cardíaca);
+        piscar_led(frequencia_cardíaca);
+        connect_to_server();
+        sleep_ms(10000);
+        if (total_leituras % 10 == 0) {
+            analisar_frequencias();
+        }
+        sleep_ms(2000);
     }
     return 0;
 }
