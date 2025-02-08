@@ -106,11 +106,11 @@ void enviar_alerta(int glicose, float pressao, int freq_cardiaca) {
 void bt_recv_callback(uint8_t *data, size_t len) {
     // Processar dados recebidos do FreeStyle Libre 2 e WBP202
     if (len == sizeof(int)) {
-        int glicose = *((int *)data);  // Exemplo de dado para glicose
+        int glicose = *((int *)data);  // dado para glicose
         printf("Glicose recebida: %d mg/dL\n", glicose);
         armazenar_dado(2, glicose);  // Armazena glicose
     } else if (len == sizeof(float)) {
-        float pressao = *((float *)data);  // Exemplo de dado para pressão arterial
+        float pressao = *((float *)data);  // dado para pressão arterial
         printf("Pressão arterial recebida: %.2f mmHg\n", pressao);
         armazenar_pressao(pressao);  // Armazena pressão
     }
@@ -119,8 +119,7 @@ void bt_recv_callback(uint8_t *data, size_t len) {
 // Função de conexão Bluetooth
 void bt_connect_callback(void) {
     printf("Bluetooth conectado!\n");
-    // Agora o dispositivo Bluetooth está pronto para receber dados
-}
+    }
 
 // Exportar para CSV
 void exportar_para_csv(int frequencia, int glicose, float pressao) {
@@ -196,8 +195,8 @@ int main() {
     bt_setup();  // Inicializa Bluetooth
 
     while (true) {
-        int glicose = 110;  // Valor fictício de glicose
-        float pressao = 135.0;  // Valor fictício de pressão arterial
+        int glicose = 110;  // Valor da glicose
+        float pressao = 135.0;  // Valor da pressão arterial
         int frequencia_cardíaca = ler_pulse_sensor();
         printf("Frequência Cardíaca: %d bpm\n", frequencia_cardíaca);
         armazenar_dado(1, frequencia_cardíaca);  // Armazena a frequência cardíaca
