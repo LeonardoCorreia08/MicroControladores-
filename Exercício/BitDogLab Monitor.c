@@ -6,6 +6,7 @@
 #include "lwip/tcp.h"
 #include "lwip/dns.h"
 #include "lwip/apps/httpd.h"
+#include "hardware/adc.h"
 #include "hardware/uart.h"
 #include <time.h>
 
@@ -14,37 +15,37 @@
 #define WIFI_PASSWORD "OLDLIfe"
 #define TCP_SERVER "tcpbin.com"
 #define TCP_PORT 4242
-#define LED_PIN 2  // Define o GPIO 2 para o LED
+#define LED_PIN 2  // LED indicador
+
+// Configuração do Pulse Sensor
+#define PULSE_SENSOR_PIN 26  // ADC 0 (GPIO26)
 
 // Usando UART com HC-05
 #define UART_ID uart0
 #define BAUD_RATE 9600
-#define UART_TX_PIN 0  // Pino TX do UART (GPIO 0)
-#define UART_RX_PIN 1  // Pino RX do UART (GPIO 1)
+#define UART_TX_PIN 0
+#define UART_RX_PIN 1
 
-// Configuração do pino do LED para indicar quando o sensor está simulando uma leitura
-#define LED_PIN 3
-#define MAX_DADOS 100  // Quantidade máxima de dados armazenados
+#define MAX_DADOS 100  // Máximo de amostras armazenadas
 
-// Buffer para armazenar os dados da frequência cardíaca
+// Buffer para armazenar dados da frequência cardíaca
 int frequencias[MAX_DADOS];
 int total_leituras = 0;
 
-// Função para armazenar os dados da frequência cardíaca
+// Função para armazenar dados
 void armazenar_frequencia(int bpm) {
     if (total_leituras < MAX_DADOS) {
         frequencias[total_leituras] = bpm;
         total_leituras++;
     } else {
-        printf("Buffer cheio! Dados antigos serão sobrescritos.\n");
         for (int i = 1; i < MAX_DADOS; i++) {
-            frequencias[i - 1] = frequencias[i];  // Desloca os dados
+            frequencias[i - 1] = frequencias[i];  
         }
         frequencias[MAX_DADOS - 1] = bpm;
     }
 }
 
-// Função para calcular e exibir a análise dos dados armazenados
+// Análise de Frequência Cardíaca
 void analisar_frequencias() {
     if (total_leituras == 0) {
         printf("Nenhum dado coletado ainda.\n");
@@ -67,18 +68,20 @@ void analisar_frequencias() {
     printf("Máxima: %d bpm\n\n", max);
 }
 
-// Função para gerar uma frequência cardíaca aleatória
-int gerar_frequencia_cardíaca() {
-    return rand() % 41 + 60;
+// Leitura do Pulse Sensor
+int ler_pulse_sensor() {
+    uint16_t leitura = adc_read();  // Lê o ADC
+    int bpm = (leitura * 120) / 4096;  // Normaliza para BPM aproximado
+    return bpm;
 }
 
-// Função para controlar a quantidade de piscadas com base na frequência cardíaca
+// LED pisca de acordo com a frequência cardíaca
 void piscar_led(int bpm) {
-    int intervalo = 1000 / bpm;  // Calculo do intervalo entre as piscadas (em ms)
+    int intervalo = 60000 / bpm;  // Tempo entre pulsos em ms
     for (int i = 0; i < 5; i++) {
-        gpio_put(LED_PIN, 1);  // Liga o LED
+        gpio_put(LED_PIN, 1);
         sleep_ms(intervalo);
-        gpio_put(LED_PIN, 0);  // Desliga o LED
+        gpio_put(LED_PIN, 0);
         sleep_ms(intervalo);
     }
 }
@@ -87,7 +90,7 @@ static struct tcp_pcb *tcp_client_pcb;
 
 err_t tcp_recv_callback(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err) {
     if (p == NULL) {
-        printf("Conexao recebida com servidor.\n");
+        printf("Conexao encerrada.\n");
         tcp_close(tpcb);
         return ERR_OK;
     }
@@ -103,12 +106,12 @@ err_t tcp_recv_callback(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t e
 
 err_t tcp_connect_callback(void *arg, struct tcp_pcb *tpcb, err_t err) {
     if (err != ERR_OK) {
-        printf("Conexao falhou com servidor.\n");
+        printf("Falha na conexão.\n");
         return err;
     }
 
-    printf("Connected to server.\n");
-    const char *message = "idosinho sendo monitorado\n";
+    printf("Conectado ao servidor.\n");
+    const char *message = "Monitoramento de paciente iniciado\n";
     tcp_write(tpcb, message, strlen(message), TCP_WRITE_FLAG_COPY);
     tcp_recv(tpcb, tcp_recv_callback);
     return ERR_OK;
@@ -116,34 +119,34 @@ err_t tcp_connect_callback(void *arg, struct tcp_pcb *tpcb, err_t err) {
 
 static void dns_callback(const char *name, const ip_addr_t *ipaddr, void *callback_arg) {
     if (ipaddr == NULL) {
-        printf("Falha ao resolver o DNS %s\n", name);
+        printf("Falha ao resolver DNS %s\n", name);
         return;
     }
 
-    printf("Resolvido %s to %s\n", name, ipaddr_ntoa(ipaddr));
+    printf("Resolvido %s para %s\n", name, ipaddr_ntoa(ipaddr));
     tcp_connect(tcp_client_pcb, ipaddr, TCP_PORT, tcp_connect_callback);
 }
 
 void wifi_setup() {
     if (cyw43_arch_init()) {
-        printf("Falha para iniciar o modulo wifi.\n");
+        printf("Falha ao iniciar Wi-Fi.\n");
         return;
     }
     cyw43_arch_enable_sta_mode();
     if (cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 10000)) {
-        printf("SSID nao encontrada.\n");
+        printf("Wi-Fi não conectado.\n");
         cyw43_arch_poll();
         cyw43_arch_deinit();
         sleep_ms(1000);
         wifi_setup();
     }
-    printf("WiFi Conectado com suceso.\n");
+    printf("Wi-Fi Conectado!\n");
 }
 
 void connect_to_server() {
     tcp_client_pcb = tcp_new();
     if (!tcp_client_pcb) {
-        printf("Falha em criar TCP PCB.\n");
+        printf("Falha ao criar TCP PCB.\n");
         return;
     }
     ip_addr_t server_ip;
@@ -157,6 +160,10 @@ int main() {
     stdio_init_all();
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
+    adc_init();
+    adc_gpio_init(PULSE_SENSOR_PIN);
+    adc_select_input(0);  // Define GPIO26 como entrada ADC
+
     srand(time(NULL));
 
     wifi_setup();
@@ -166,7 +173,7 @@ int main() {
     gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
 
     while (true) {
-        int frequencia_cardíaca = gerar_frequencia_cardíaca();
+        int frequencia_cardíaca = ler_pulse_sensor();
         printf("Frequência Cardíaca: %d bpm\n", frequencia_cardíaca);
         armazenar_frequencia(frequencia_cardíaca);
         piscar_led(frequencia_cardíaca);
