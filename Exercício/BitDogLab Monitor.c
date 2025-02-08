@@ -24,65 +24,84 @@
 
 #define MAX_DADOS 100  // Máximo de amostras armazenadas
 
-// Buffer para armazenar dados da frequência cardíaca
+// Buffers para armazenar dados
 int frequencias[MAX_DADOS];
-int total_leituras = 0;
+int glicoses[MAX_DADOS];
+float pressao[MAX_DADOS];
+int total_frequencias = 0;
+int total_glicose = 0;
+int total_pressao = 0;
 
 // Função para armazenar dados
-void armazenar_frequencia(int bpm) {
-    if (total_leituras < MAX_DADOS) {
-        frequencias[total_leituras] = bpm;
-        total_leituras++;
-    } else {
-        for (int i = 1; i < MAX_DADOS; i++) {
-            frequencias[i - 1] = frequencias[i];  
+void armazenar_dado(int tipo, int dado) {
+    if (tipo == 1 && total_frequencias < MAX_DADOS) {
+        frequencias[total_frequencias] = dado;
+        total_frequencias++;
+    } else if (tipo == 2 && total_glicose < MAX_DADOS) {
+        glicoses[total_glicose] = dado;
+        total_glicose++;
+    }
+}
+
+// Função para armazenar pressão
+void armazenar_pressao(float dado) {
+    if (total_pressao < MAX_DADOS) {
+        pressao[total_pressao] = dado;
+        total_pressao++;
+    }
+}
+
+// Função para análise de dados (frequência, glicose, pressão)
+void analisar_dados() {
+    if (total_frequencias > 0) {
+        int soma = 0, min = frequencias[0], max = frequencias[0];
+        for (int i = 0; i < total_frequencias; i++) {
+            soma += frequencias[i];
+            if (frequencias[i] < min) min = frequencias[i];
+            if (frequencias[i] > max) max = frequencias[i];
         }
-        frequencias[MAX_DADOS - 1] = bpm;
+        float media = (float)soma / total_frequencias;
+        printf("\nFrequência Cardíaca - Média: %.2f bpm, Mínima: %d bpm, Máxima: %d bpm\n", media, min, max);
+    }
+
+    if (total_glicose > 0) {
+        int soma = 0, min = glicoses[0], max = glicoses[0];
+        for (int i = 0; i < total_glicose; i++) {
+            soma += glicoses[i];
+            if (glicoses[i] < min) min = glicoses[i];
+            if (glicoses[i] > max) max = glicoses[i];
+        }
+        float media = (float)soma / total_glicose;
+        printf("\nGlicose - Média: %.2f mg/dL, Mínima: %d mg/dL, Máxima: %d mg/dL\n", media, min, max);
+    }
+
+    if (total_pressao > 0) {
+        float soma = 0.0f, min = pressao[0], max = pressao[0];
+        for (int i = 0; i < total_pressao; i++) {
+            soma += pressao[i];
+            if (pressao[i] < min) min = pressao[i];
+            if (pressao[i] > max) max = pressao[i];
+        }
+        float media = soma / total_pressao;
+        printf("\nPressão Arterial - Média: %.2f mmHg, Mínima: %.2f mmHg, Máxima: %.2f mmHg\n", media, min, max);
     }
 }
 
-// Análise de Frequência Cardíaca
-void analisar_frequencias() {
-    if (total_leituras == 0) {
-        printf("Nenhum dado coletado ainda.\n");
-        return;
-    }
-
-    int soma = 0, min = frequencias[0], max = frequencias[0];
-
-    for (int i = 0; i < total_leituras; i++) {
-        soma += frequencias[i];
-        if (frequencias[i] < min) min = frequencias[i];
-        if (frequencias[i] > max) max = frequencias[i];
-    }
-
-    float media = (float)soma / total_leituras;
-
-    printf("\nAnálise de Frequência Cardíaca:\n");
-    printf("Média: %.2f bpm\n", media);
-    printf("Mínima: %d bpm\n", min);
-    printf("Máxima: %d bpm\n\n", max);
+// Função para formatar e enviar alerta via MQTT
+void enviar_alerta(int glicose, float pressao, int freq_cardiaca) {
+    char payload[256];
+    snprintf(payload, sizeof(payload),
+             "{\"pressao\": \"%.1f\", \"freq_cardiaca\": %d, \"glicose\": %d}",
+             pressao, freq_cardiaca, glicose);
+    
+    const char *topico = "monitoramento/saude";
+    
+    printf("Enviando alerta para tópico: %s\n", topico);
+    printf("Payload: %s\n", payload);
+    
+    // Aqui você deve implementar a lógica de envio MQTT
+    // Exemplo: mqtt_publish(topico, payload);
 }
-
-// Leitura do Pulse Sensor
-int ler_pulse_sensor() {
-    uint16_t leitura = adc_read();  // Lê o ADC
-    int bpm = (leitura * 120) / 4096;  // Normaliza para BPM aproximado
-    return bpm;
-}
-
-// LED pisca de acordo com a frequência cardíaca
-void piscar_led(int bpm) {
-    int intervalo = 60000 / bpm;  // Tempo entre pulsos em ms
-    for (int i = 0; i < 5; i++) {
-        gpio_put(LED_PIN, 1);
-        sleep_ms(intervalo);
-        gpio_put(LED_PIN, 0);
-        sleep_ms(intervalo);
-    }
-}
-
-static struct tcp_pcb *tcp_client_pcb;
 
 // Função de callback para recepção de dados via Bluetooth
 void bt_recv_callback(uint8_t *data, size_t len) {
@@ -90,9 +109,11 @@ void bt_recv_callback(uint8_t *data, size_t len) {
     if (len == sizeof(int)) {
         int glicose = *((int *)data);  // Exemplo de dado para glicose
         printf("Glicose recebida: %d mg/dL\n", glicose);
+        armazenar_dado(2, glicose);  // Armazena glicose
     } else if (len == sizeof(float)) {
         float pressao = *((float *)data);  // Exemplo de dado para pressão arterial
         printf("Pressão arterial recebida: %.2f mmHg\n", pressao);
+        armazenar_pressao(pressao);  // Armazena pressão
     }
 }
 
@@ -164,14 +185,22 @@ int main() {
     bt_setup();  // Inicializa Bluetooth
 
     while (true) {
+        int glicose = 110;  // Valor fictício de glicose
+        float pressao = 135.0;  // Valor fictício de pressão arterial
         int frequencia_cardíaca = ler_pulse_sensor();
         printf("Frequência Cardíaca: %d bpm\n", frequencia_cardíaca);
-        armazenar_frequencia(frequencia_cardíaca);
+        armazenar_dado(1, frequencia_cardíaca);  // Armazena a frequência cardíaca
+        armazenar_dado(2, glicose);  // Armazena glicose
+        armazenar_pressao(pressao);  // Armazena pressão arterial
         piscar_led(frequencia_cardíaca);
         connect_to_server();
+        
+        // Verifica se os valores exigem um alerta
+        enviar_alerta(glicose, pressao, frequencia_cardíaca);
+
         sleep_ms(10000);
-        if (total_leituras % 10 == 0) {
-            analisar_frequencias();
+        if (total_frequencias % 10 == 0) {
+            analisar_dados();
         }
         sleep_ms(2000);
     }
