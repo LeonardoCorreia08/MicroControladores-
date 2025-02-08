@@ -1,0 +1,23 @@
+#include <stdio.h>
+#include <json-c/json.h>
+
+void exportar_para_json(int frequencia, int glicose, float pressao) {
+    json_object *jobj = json_object_new_object();
+    json_object *jfrequencia = json_object_new_int(frequencia);
+    json_object *jglicose = json_object_new_int(glicose);
+    json_object *jpressao = json_object_new_double(pressao);
+
+    json_object_object_add(jobj, "frequencia", jfrequencia);
+    json_object_object_add(jobj, "glicose", jglicose);
+    json_object_object_add(jobj, "pressao", jpressao);
+
+    // Salva o JSON em um arquivo
+    FILE *file = fopen("/path/to/dados_monitoramento.json", "a");
+    if (file == NULL) {
+        printf("Erro ao abrir o arquivo JSON\n");
+        return;
+    }
+
+    fprintf(file, "%s\n", json_object_to_json_string(jobj));
+    fclose(file);
+}
