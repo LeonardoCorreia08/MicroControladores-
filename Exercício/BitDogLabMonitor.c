@@ -239,7 +239,14 @@ void enviar_alerta(int glicose, float pressao, int freq_cardiaca) {
     printf("Enviando alerta para tópico: %s\n", topico);
     printf("Payload: %s\n", payload);
 }
-
+// Publicar dados no broker MQTT
+    mqtt_publish(&mqtt_client, MQTT_TOPIC, payload, strlen(payload), MQTT_QOS_1, 0);
+}
+// Função de configuração MQTT
+void mqtt_config() {
+    mqtt_init(&mqtt_client, MQTT_BROKER, MQTT_PORT);
+    mqtt_connect(&mqtt_client, "monitoramento/saude", "user", "password");  // Defina credenciais 
+}
 // Função de callback para recepção de dados via Bluetooth
 void bt_recv_callback(uint8_t *data, size_t len) {
     // Processar dados recebidos do FreeStyle Libre 2 e WBP202
